@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>CS 527 Project</title>
+    <script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/1.8.0/jquery.min.js"></script>
+    <link href='https://cdn.datatables.net/1.10.24/css/jquery.dataTables.min.css' rel='stylesheet' type='text/css'>
+    <script src="https://cdn.datatables.net/1.10.24/js/jquery.dataTables.min.js"></script>
+    <script>
+        // user input value
+        let query;                  // input query
+        let databaseType;           // connected database
+        let currentDatabaseName;    // used schema/database
+
+        // server returned value
+        let tableQuery;             // query of each generated table
+        let displayedQuery;         // query that will be displayed in result section
+        let totalRecords;           // numeric value of number of rows affected/retrieved
+        let influencedRowResult;    // string value of number of rows affected/retrieved
+        let executedTimeStamp;      // string value of timestamp when each query is executed
+        let resultAttribute;        // table attribute
+        let queryResult;            // table data
+        let executionTime;          // string value of execution time of each query
+        let totalExecutionTime;     // total time of executing all sql queries
+
+        let resultTables = document.getElementsByTagName('resultTable');
+
+        function queryExecution(){
+            let resultTableDiv = document.getElementById('result-table-div');
+            resultTableDiv.innerHTML = '';
+            document.getElementById('execution-time').innerText = "∞ s";
+            query = document.getElementById('query').value;     // input query
+            if(query.length == 0){
+                alert("Empty Query!");
+                document.getElementById('execution-time').innerText = "0.0 s";
+                return;
+            }
+            if(!databaseType){
+                alert("You haven't connected to a database!\nPlease choose a database first!");
+                document.getElementById('execution-time').innerText = "0.0 s";
+                return;
+            }
+            currentDatabaseName = document.getElementById('current-database');      // selected database/schema
+
+            $.ajax(
+                {
+                    url:'query_submit/',
+                    timeout: 300000,
+                    type: 'POST',
+                    data: {'databaseType': databaseType, 'query': query, 'currentDatabase': currentDatabaseName.innerText},
+                    success: function(arg){
+                        if(arg['responseStatus']){
+                            document.getElementById('execution-time').innerText = "0.0 s";
+                            alert(arg['errorDetails']);
+                        }
+                        else{
+                            tableQuery = arg['tableQuery'];
+                            displayedQuery = arg['displayedQuery'];
+                            totalRecords = arg['totalRecords'];
+                            executedTimeStamp = arg['executedTimeStamp']
+                            influencedRowResult = arg['influencedRowResult'];
+                            resultAttribute = arg['resultAttribute'];
+                            queryResult = arg['queryResult'];
+                            executionTime = arg['executionTime'];
+                            totalExecutionTime = arg['totalExecutionTime'];
+                            currentDatabase = arg['currentDatabase'] === "None" ? '' : arg['currentDatabase'];
+                            // document.getElementById('result-area').value = formatOutput(influencedRowResult, resultAttribute, queryResult);
+                            document.getElementById('execution-time').innerText = totalExecutionTime;
+                            currentDatabaseName.innerText = currentDatabase;
+
+                            for(let i in tableQuery){
+                                let p = document.createElement('p');
+                                p.id = 'result' + i;
+                                let statusText = ""
+                                p.innerHTML =  "<span style='color: green'>" + currentDatabaseName.innerText + " ></span></br>" +
+                                    displayedQuery[i] + "</br>" +
+                                    "[" + executedTimeStamp[i] + "] " +
+                                    (influencedRowResult[i][influencedRowResult[i].length - 1] ? influencedRowResult[i][influencedRowResult[i].length - 1] : "completed") +
+                                    " in " + executionTime[i];
+                                resultTableDiv.appendChild(p);
+
+                                let resultLength = resultAttribute[i].length
+                                for(let j in resultAttribute[i]){
+                                    if(resultAttribute[i][j]){
+                                        let table = document.createElement('table');
+                                        table.id = "resultTable_" + i + "_" + j;
+                                        table.className = "cell-border compact display dataTable hover";
+                                        table.width = '100%';
+                                        let caption = document.createElement('caption');
+                                        // caption.innerText = tableQuery[i].toString();
+                                        caption.innerText = resultLength > 1 ? "Result Table " + i + "-" + j : "Result Table " + i;
+                                        table.appendChild(caption);
+                                        let thead = document.createElement('thead');
+                                        let tr = document.createElement('tr');
+                                        for(let k in resultAttribute[i][j]){
+                                            let th = document.createElement('th')
+                                            th.innerText = resultAttribute[i][j][k];
+                                            tr.appendChild(th);
+                                        }
+                                        thead.appendChild(tr);
+                                        table.appendChild(thead);
+                                        resultTableDiv.appendChild(table);
+                                        updateData(databaseType, resultAttribute[i][j], table, tableQuery[i], totalRecords[i][j], j);
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    error: function(XMLHttpRequest, textStatus, errorThrown){
+                        document.getElementById('execution-time').innerText = "0.0 s";
+                        alert("Status: " + textStatus + "\nError: " + errorThrown);
+                    }
+                });
+        }
+        function switchDatabase(clickedRadio){
+            databaseType = clickedRadio.value;
+            currentDatabaseName = document.getElementById('current-database');
+            $.ajax(
+                {
+                    url:'switch_database/',
+                    type: 'POST',
+                    data: {'databaseType': databaseType},
+                    success: function(arg){
+                        if(arg['responseStatus'] === 1){
+                            alert(arg['errorDetails']);
+                            clickedRadio.checked = false;
+                        }
+                        else{
+                            alert('Switch to ' + databaseType + ' successfully!');
+                            currentDatabaseName.innerText = arg['currentDatabase'];
+                            document.getElementById('execution-time').innerText = "0.0 s";
+                            document.getElementById('result-table-div').innerHTML = '';
+                            document.getElementById('query').value = '';
+                        }
+                    },
+                    error: function(XMLHttpRequest, textStatus, errorThrown){
+                        alert("Status: " + textStatus + "\n" +
+                            "Error: " + errorThrown + '\n' +
+                            'Failed to connect to ' + databaseType + '. Please try again.')
+                        clickedRadio.checked = false;
+                    }
+                });
+        }
+        function formatOutput(influencedRowResult, resultAttribute, queryResult){
+            let formatResult = "";
+            for(let i = 0; i < influencedRowResult.length; i++){
+                formatResult += influencedRowResult[i] + "\n"
+                for(let column in resultAttribute[i]){
+                    formatResult += resultAttribute[i][column] + "\t"
+                }
+                formatResult += "\n"
+                for(let row in queryResult[i]){
+                    for(let column in queryResult[i][row]){
+                        formatResult += queryResult[i][row][column] + "\t"
+                    }
+                    formatResult += "\n"
+                }
+                formatResult += "\n"
+            }
+            return formatResult
+        }
+        function updateData(databaseType, attribute, resultTable, query, totalRecords, resultIndex){
+            currentDatabaseName = document.getElementById('current-database');      // selected database/schema
+            let columns = [];
+            for(let i in attribute){
+                columns.push({data: "\'" + attribute[i] + "\'"});
+            }
+            // console.log(columns);
+            $("#" + resultTable.id).DataTable({
+                    'processing': true,
+                    'serverSide': true,
+                    'serverMethod': 'post',
+                    'ajax': {
+                        timeout: 300000,
+                        'url': 'update_data/',
+                        'type': 'POST',
+                        'data': {
+                            'databaseType': databaseType,
+                            'currentDatabase': currentDatabaseName.innerText,
+                            totalRecords: totalRecords,
+                            'query': query,
+                            'attribute[]': attribute,
+                            'resultIndex': resultIndex
+                        },
+                        'error':
+                            function(XMLHttpRequest, textStatus, errorThrown){
+                                alert("Status: " + textStatus + "\nError: " + errorThrown)
+                            }
+                    },
+                    'lengthMenu': [[10, 25, 50], [10, 25, 50]],
+                    searching: false,
+                    sort: false,
+                    // columnDefs:[{'defaultContent': '-', 'target': '_all'}],
+                    'columns':columns
+                });
+        }
+    </script>
+</head>
+<body style="font-family: 'Cascadia Mono', serif;">
+<div style="margin: auto; width: fit-content">
+    <form action="" method="post">
+        <div id="database-div">
+            <p style="display: inline-block; margin: 0">Database:</p>
+            <div style="display: inline-block; border: 1px solid">
+                <p id="current-database" style="display: inline-block; margin: 0;"></p>
+            </div>
+            <label style="margin-left: 10px">
+                <input type="radio" name="database" value="mysql" onclick="switchDatabase(this)">MySQL
+                <input type="radio" name="database" value="redshift" style="margin-left: 5%" onclick="switchDatabase(this)">Redshift
+                <input type="radio" name="database" value="mongodb" style="margin-left: 5%" onclick="switchDatabase(this)">MongoDB
+            </label>
+        </div>
+        <div id="query-div" style="margin-top: 10px">
+            <p style="margin: 0">Query:</p>
+            <label for="query"></label><textarea id="query" name="query" cols="45" rows="15" style="resize: none; margin-top: 5px; font-family: 'Cascadia Mono', serif; font-size: 14pt" spellcheck="false"></textarea>
+        </div>
+        <div id="run-button-div" style="margin-top: 1px">
+            <button type="button" onclick="queryExecution()" style="display: inline-block; background: rgb(192, 255, 192); width: 30%; font-family: 'Cascadia Mono', serif;" accesskey="s">Run</button>
+            <div style="float: right; display: inline-block">
+                <p style="display: inline-block; margin: 0">Time Elapsed: </p>
+                <p id="execution-time" style="display: inline-block; margin: 0">0.0 s</p>
+            </div>
+        </div>
+    </form>
+</div>
+<div id="result-table-div" style="margin: auto; width: fit-content" ></div>
+
+</body>
+</html>
